@@ -7,6 +7,7 @@ import { fmtStamp } from "@/lib/schedule";
 export const metadata = { title: "Change log · Film Set" };
 
 const ACTION_LABEL: Record<string, string> = {
+  company_created: "Created the company",
   film_created: "Created the film",
   signed_up: "Joined with a sign-up code",
   added_film: "Added this movie to their account",

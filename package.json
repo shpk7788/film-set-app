@@ -10,7 +10,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx --env-file=.env src/db/migrate.ts",
     "db:seed": "tsx --env-file=.env src/db/seed.ts",
-    "test": "vitest run"
+    "test": "vitest run",
+    "vercel-build": "tsx src/db/migrate.ts && next build"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

@@ -6,13 +6,13 @@
 import bcrypt from "bcryptjs";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { count, eq } from "drizzle-orm";
-import { Pool } from "pg";
+import { makePool } from "./pool";
 import * as schema from "./schema";
 import type { ProgramData } from "./schema";
 import { DEFAULT_DEPARTMENTS } from "../lib/defaults";
 import { addDays, todayIST } from "../lib/permissions";
 
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const pool = makePool(2);
 const db = drizzle(pool, { schema });
 
 async function main() {

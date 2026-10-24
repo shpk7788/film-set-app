@@ -50,11 +50,16 @@ npm test                      # permission + program-sheet logic tests
 npx tsc --noEmit && npm run lint
 ```
 
-## Deploying
+## Deploying (Supabase + Vercel)
 
-- **Database:** a managed Postgres in an India region (e.g. Supabase or Neon, Mumbai). Run `npm run db:migrate` against it. Don't run the seed in production.
-- **App:** any Node host (e.g. Vercel). Set `DATABASE_URL`.
-- Create the first company and owner with a one-off SQL insert or a small script (`people` row with a bcrypt hash, then `companies` with `owner_person_id`). The owner then creates films at `/owner`.
+1. **Supabase:** create a project in the Mumbai (ap-south-1) region. Copy the **Session pooler** connection string and put your database password into it.
+2. **Vercel:** import this GitHub repo and add two environment variables:
+   - `DATABASE_URL`: the Supabase connection string
+   - `SETUP_CODE`: any long random text (used once for first-time setup)
+3. Deploy. The `vercel-build` script applies database migrations and then builds the app, so every future deploy updates the database automatically.
+4. Open `https://<your-app>/setup`, enter the `SETUP_CODE`, and create your company and owner login. The page disappears after that. Then create your first film at `/owner`.
+
+Row level security is switched on for every table (migration `0002`) so Supabase's public Data API can't read anything; the app connects as the table owner. Never run `db:seed` against production.
 
 ## Project layout
 
