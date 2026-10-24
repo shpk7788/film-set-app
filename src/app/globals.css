@@ -1,26 +1,50 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+@theme {
+  --color-ink: #1b1b1f;
+  --color-muted: #555a64;
+  --color-line: #e3e5ea;
+  --color-ground: #f4f5f7;
+  --color-everyone: #1f5fbf;
+  --color-everyone-soft: #e6eefa;
+  --color-dept: #1e7a45;
+  --color-dept-soft: #e7f4ec;
+  --color-production: #c2410c;
+  --color-production-soft: #fdece2;
+  --color-direction: #5b3596;
+  --color-direction-soft: #f1ecf8;
+  --color-warn: #8a5300;
+  --color-warn-soft: #fff7e6;
+  --color-warn-line: #e0a230;
+  --color-danger: #b42318;
+  --color-danger-soft: #fbe4e1;
+  --font-sans: "Noto Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
+html,
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-ground);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-text-size-adjust: 100%;
+}
+
+/* Big, easy tap targets everywhere */
+button,
+a,
+input,
+select,
+textarea {
+  touch-action: manipulation;
+}
+
+input,
+select,
+textarea {
+  font-size: 17px; /* stops iPhone zooming into fields */
+}
+
+.no-select {
+  -webkit-user-select: none;
+  user-select: none;
 }
