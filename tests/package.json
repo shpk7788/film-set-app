@@ -1,0 +1,11 @@
+{
+  "name": "film-set-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test db.test.mjs"
+  },
+  "devDependencies": {
+    "pg": "^8.13.0"
+  }
+}
