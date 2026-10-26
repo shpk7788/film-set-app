@@ -1,5 +1,5 @@
 import { rpc } from "../api.js";
-import { alert, badge, btn, checkbox, empty, esc, field, fmtStamp, fmtTime, link, onForm, select, textarea, title, toast, watermark } from "../ui.js";
+import { alert, avatar, badge, btn, checkbox, empty, esc, field, fmtStamp, fmtTime, link, onForm, select, textarea, title, toast, watermark } from "../ui.js";
 import { bindGotIt, changedBox, dayLabel, gotIt, has, sliceView } from "./parts.js";
 
 const label = (x) => `<p class="label">${x}</p>`;
@@ -264,7 +264,7 @@ export async function tracker({ params, me, render }) {
           return `<section class="card ${waiting ? "strong-danger" : ""}"><div class="row">${label(esc(g))}<b class="${waiting ? "danger-text" : "ok"}">${ps.length - waiting}/${ps.length}</b></div>
             ${ps
               .map(
-                (p) => `<div class="line"><span><b>${esc(p.name)}</b><small class="muted block">${esc(p.roleLabel)}</small></span>${
+                (p) => `<div class="line"><span class="who-line">${avatar(p.name, "sm")}<span><b>${esc(p.name)}</b><small class="muted block">${esc(p.roleLabel)}</small></span></span>${
                   p.confirmedAt ? `<span class="ok small"><b>✓ ${fmtStamp(p.confirmedAt)}</b></span>` : p.phone ? `<a class="btn dept small" href="tel:${esc(p.phone)}">Call</a>` : `<span class="danger-text small"><b>Not yet</b></span>`
                 }</div>`,
               )

@@ -1,6 +1,8 @@
 import { Auth, checkPassword, rpc } from "../api.js";
 import { alert, badge, btn, checkbox, esc, field, link, onForm, svg } from "../ui.js";
 
+const brand = `<p class="brandmark"><i>${svg("clap", 20)}</i>Film Set</p>`;
+
 const steps = (n) =>
   `<div class="steps" aria-label="Step ${n} of 3">${[1, 2, 3].map((i) => `<span class="${i <= n ? "on" : ""}"></span>`).join("")}</div><p class="muted small">Step ${n} of 3</p>`;
 
@@ -12,8 +14,8 @@ const codeInput = (name = "code") =>
 
 export async function login({ go, film }) {
   return {
-    html: `<main class="auth">
-      <h1 class="big">Log in</h1>
+    html: `<main class="auth">${brand}
+      <h1 class="big" style="margin-top:28px">Welcome back</h1>
       <p class="muted">Use the username and password you made when you joined.</p>
       <form id="f" class="stack">
         ${field("Username", "username", { attrs: 'autocomplete="username" autocapitalize="none"', required: true })}
@@ -43,7 +45,7 @@ export async function login({ go, film }) {
 
 export async function join({ go }) {
   return {
-    html: `<main class="auth">${steps(1)}
+    html: `<main class="auth">${brand}${steps(1)}
       <h1 class="big">Enter your sign-up code</h1>
       <p class="muted">The production office gave you this code on WhatsApp or on a paper slip.</p>
       <form id="f" class="stack grow">
@@ -166,7 +168,7 @@ export async function films({ go, film }) {
   const mine = await rpc("my_films");
   return {
     html: `<main class="auth">
-      <div class="row"><h1>Your movies</h1><button class="btn ghost small" id="out">Log out</button></div>
+      ${brand}<div class="row"><h1>Your movies</h1><button class="btn ghost small" id="out">Log out</button></div>
       <p class="muted">Logged in as ${esc(mine.username || Auth.user?.username)}</p>
       <div class="stack">
         ${mine.films.length ? "" : `<p class="empty">You're not on any movie right now. Add one with a code below.</p>`}
@@ -208,7 +210,7 @@ export async function setup({ go, film }) {
   const needed = await rpc("setup_needed");
   if (!needed) return { html: `<main class="auth"><h1 class="big">Setup is done</h1><p class="muted">This page only works once.</p>${link("Log in", "#/login", "primary wide")}</main>` };
   return {
-    html: `<main class="auth">
+    html: `<main class="auth">${brand}
       <h1 class="big">First-time setup</h1>
       <p class="muted">Creates your company and your owner login. This page stops working once it's done.</p>
       <form id="f" class="stack">

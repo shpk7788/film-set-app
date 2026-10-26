@@ -1,6 +1,6 @@
 // Keeps the app's own files available offline (network first, so updates show straight away).
 // Data always comes live from the database.
-const CACHE = "filmset-v1";
+const CACHE = "filmset-v2";
 const FILES = ["./", "index.html", "config.js", "css/app.css", "icon.svg", "manifest.webmanifest",
   "js/main.js", "js/api.js", "js/ui.js", "js/views/auth.js", "js/views/home.js", "js/views/parts.js",
   "js/views/schedule.js", "js/views/crew.js", "js/views/admin.js"];

@@ -19,6 +19,11 @@ const waitText = (p, t) => p.getByText(t, { exact: false }).first().waitFor({ ti
 async function fill(p, map) {
   for (const [name, value] of Object.entries(map)) await p.fill(`[name="${name}"]`, String(value));
 }
+async function openAdd(p) {
+  const box = p.locator("#addbox");
+  await box.waitFor();
+  if (!(await box.evaluate((d) => d.open))) await box.locator("summary").click();
+}
 async function login(p, user, pw = "Demo1234x") {
   await p.goto(`${BASE}/#/login`);
   await fill(p, { username: user, password: pw });
@@ -56,7 +61,7 @@ const people = [
 ];
 await owner.goto(`${BASE}/#/people`);
 for (const [name, role, extra] of people) {
-  await waitText(owner, "Add a person");
+  await openAdd(owner);
   await fill(owner, { name });
   await owner.selectOption('[name="role"]', role);
   if (extra.dept) await owner.selectOption('[name="departmentId"]', { label: extra.dept });
@@ -228,6 +233,7 @@ await fill(owner, { title: "Second Film" });
 await owner.getByRole("button", { name: "Create film" }).click();
 await owner.waitForURL(/#\/home/);
 await owner.goto(`${BASE}/#/people`);
+await openAdd(owner);
 await fill(owner, { name: "Mani Lights" });
 await owner.selectOption('[name="role"]', "department_head");
 await owner.selectOption('[name="departmentId"]', { label: "Lights" });

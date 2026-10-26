@@ -1,5 +1,5 @@
 import { Auth, configured, rpc } from "./api.js";
-import { esc, svg } from "./ui.js";
+import { avatar, esc, svg } from "./ui.js";
 import * as A from "./views/auth.js";
 import * as H from "./views/home.js";
 import * as S from "./views/schedule.js";
@@ -70,16 +70,16 @@ let renderSeq = 0;
 
 function navFor(me, active) {
   const caps = new Set(me.caps);
-  const items = [["home", "Home", "home"]];
+  const items = [["home", "Today", "home"]];
   if (caps.has("schedule.all") || caps.has("schedule.today") || caps.has("schedule.tomorrow")) items.push(["schedule", "Schedule", "schedule"]);
   if (caps.has("crew.view")) items.push(["crew", "Records", "records"]);
-  items.push(["inbox", "Inbox", "inbox"], ["menu", "Menu", "menu"]);
+  items.push(["inbox", "Updates", "inbox"], ["menu", "More", "menu"]);
   const map = { day: "schedule", edit: "schedule", tracker: "schedule", viewas: "schedule", search: "crew", contracts: "menu", people: "menu", access: "menu", audit: "menu", notices: "menu", today: "home", callsheet: "home" };
   const cur = map[active] ?? (active === "crew" ? "crew" : active);
   return `<nav class="bottom" style="grid-template-columns:repeat(${items.length},minmax(0,1fr))" aria-label="Main">${items
     .map(
       ([k, label, ic]) =>
-        `<a href="#/${k}" ${cur === k ? 'aria-current="page"' : ""}>${svg(ic, 26)}<span>${label}</span>${
+        `<a href="#/${k}" ${cur === k ? 'aria-current="page"' : ""}>${svg(ic, 24)}<span>${label}</span>${
           k === "inbox" && me.unread ? `<b class="dot">${me.unread > 99 ? "99+" : me.unread}</b>` : ""
         }</a>`,
     )
@@ -87,11 +87,12 @@ function navFor(me, active) {
 }
 
 function shell(me, active, inner) {
+  const ini = esc((me.film.title || "?").trim()[0] || "?").toUpperCase();
   return `<div class="shell">
-    <header class="top"><a href="#/films" aria-label="Switch movie">
-      <small>${esc(me.film.title)}${me.film.readOnly ? " · wrapped (read-only)" : ""} ▾</small>
-      <strong>${esc(me.member.name)}<span> · ${esc(me.member.roleLabel)}${me.member.department ? `, ${esc(me.member.department)}` : ""}</span></strong>
-    </a></header>
+    <header class="top">
+      <a class="film-chip" href="#/films" aria-label="Switch movie"><i>${ini}</i><span>${esc(me.film.title)}${me.film.readOnly ? " · wrapped" : ""}</span>${svg("down", 16)}</a>
+      <a class="me" href="#/menu" aria-label="Menu"><small>${esc(me.member.roleLabel)}${me.member.department ? `<br>${esc(me.member.department)}` : ""}</small>${avatar(me.member.name)}</a>
+    </header>
     <div class="content">${inner}</div>
     ${navFor(me, active)}
   </div>`;

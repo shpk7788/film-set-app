@@ -1,5 +1,5 @@
 import { rpc } from "../api.js";
-import { alert, badge, btn, checkbox, empty, esc, field, fmtStamp, fmtTenths, inr, onForm, select, toast, watermark } from "../ui.js";
+import { alert, avatar, badge, btn, checkbox, empty, esc, field, fmtStamp, fmtTenths, inr, onForm, select, toast, watermark } from "../ui.js";
 import { recordsHeader } from "./crew.js";
 
 const toPaise = (s) => {
@@ -94,15 +94,15 @@ export async function people({ me, filmId, render }) {
     html: `${recordsHeader(me, "People & codes", "people")}<main class="page">
       ${
         p.canManage && !ro
-          ? `<section class="card"><h2>Add a person</h2><form id="add" class="stack">
+          ? `<details class="card add-scene" id="addbox"><summary><b>+ Add a person</b></summary><form id="add" class="stack">
               ${field("Name", "name", { required: true })}
               ${select("Role", "role", p.assignable.map((a) => [a.role, a.label]), p.assignable.some((a) => a.role === "department_crew") ? "department_crew" : p.assignable[0]?.role)}
               ${select("Department (crew and heads)", "departmentId", [["", "—"], ...p.departments.map((d) => [d.id, d.name])])}
               ${field("Character (actors)", "character")}
               ${field("Mobile number", "phone", { type: "tel", attrs: 'placeholder="+91 98400 00000"' })}
               ${field("Access ends (required for interns)", "accessEndsOn", { type: "date" })}
-              ${btn("Add &amp; create sign-up code", "dark wide")}
-            </form></section>`
+              ${btn("Add &amp; create sign-up code", "primary wide")}
+            </form></details>`
           : ""
       }
       ${GROUPS.map(([g, roles]) => {
@@ -116,7 +116,7 @@ export async function people({ me, filmId, render }) {
                 )}`
               : "";
             return `<div class="person">
-              <div class="row"><span><b class="${x.active ? "" : "struck"}">${esc(x.name)}</b><small class="muted block">${esc(x.roleLabel)}${x.department ? ` · ${esc(x.department)}` : ""}${x.character ? ` · “${esc(x.character)}”` : ""}${x.accessEndsOn ? ` · until ${esc(x.accessEndsOn)}` : ""}${x.phone ? ` · ${esc(x.phone)}` : ""}</small></span>
+              <div class="row"><span class="who-line">${avatar(x.name)}<span><b class="${x.active ? "" : "struck"}">${esc(x.name)}</b><small class="muted block">${esc(x.roleLabel)}${x.department ? ` · ${esc(x.department)}` : ""}${x.character ? ` · “${esc(x.character)}”` : ""}${x.accessEndsOn ? ` · until ${esc(x.accessEndsOn)}` : ""}${x.phone ? ` · ${esc(x.phone)}` : ""}</small></span></span>
                 ${!x.active ? badge("Removed", "danger") : x.joined ? badge("Joined", "dept") : badge("Not joined", "warn")}</div>
               ${x.code ? `<div class="codebox"><span>${x.code.purpose === "reset" ? "Reset code" : "Sign-up code"} · works once</span><b>${esc(x.code.code)}</b></div>${x.manageable && !ro ? `<a class="btn dark wide small" target="_blank" rel="noreferrer" href="${share}">Send code on WhatsApp</a>` : ""}` : ""}
               ${
@@ -251,7 +251,7 @@ export async function audit({ me, filmId }) {
       ${rows.length ? "" : empty("Nothing yet.")}
       ${rows
         .map(
-          (r) => `<div class="logrow"><p><b>${esc(ACTIONS[r.action] ?? r.action)}</b>${r.after?.channel ? ` <span class="muted">(${esc(r.after.channel)} → ${r.after.allowed === null ? "default" : r.after.allowed ? "unlocked" : "locked"})</span>` : ""}</p><p class="muted small">${esc(r.who)} · ${fmtStamp(r.at)}</p></div>`,
+          (r) => `<div class="logrow">${avatar(r.who, "sm")}<div><p><b>${esc(ACTIONS[r.action] ?? r.action)}</b>${r.after?.channel ? ` <span class="muted">(${esc(r.after.channel)} → ${r.after.allowed === null ? "default" : r.after.allowed ? "unlocked" : "locked"})</span>` : ""}</p><p class="muted small">${esc(r.who)} · ${fmtStamp(r.at)}</p></div></div>`,
         )
         .join("")}
     </main>`,

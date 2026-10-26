@@ -29,7 +29,33 @@ export const icon = {
   check: '<path d="M20 6 9 17l-5-5"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+  chev: '<path d="M9 6l6 6-6 6"/>',
+  down: '<path d="M6 9l6 6 6-6"/>',
+  people: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14a6 6 0 0 1 3.5 6"/>',
+  money: '<path d="M4 7h16v12H4z"/><path d="M4 11h16"/><circle cx="16" cy="15" r="1.5"/>',
+  clap: '<path d="M4 10h16v10H4z"/><path d="M4 10l3-6h3l-3 6m6 0 3-6h3l-3 6"/>',
+  megaphone: '<path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1z"/><path d="M16 8a5 5 0 0 1 0 8"/>',
+  clock: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
+  log: '<path d="M8 6h12M8 12h12M8 18h12"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
+  sparkle: '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/>',
+  film: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 5v14M17 5v14M3 9h4M3 15h4M17 9h4M17 15h4"/>',
 };
+
+/** Initials in a gradient circle; the colour is stable for each name. */
+export function avatar(name, size = "") {
+  const n = String(name || "?");
+  const ini = n.split(/\s+/).filter(Boolean).map((w) => w[0]).join("").slice(0, 2).toUpperCase() || "?";
+  let h = 0;
+  for (const ch of n) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return `<span class="av ${size} c${h % 6}" aria-hidden="true">${esc(ini)}</span>`;
+}
+
+export function greeting(name) {
+  const h = Number(new Date().toLocaleString("en-IN", { hour: "numeric", hour12: false, timeZone: "Asia/Kolkata" }));
+  const first = esc(String(name || "").split(/\s+/)[0]);
+  return `${h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening"}, ${first}`;
+}
 export const svg = (name, size = 24) =>
   `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icon[name]}</svg>`;
 
