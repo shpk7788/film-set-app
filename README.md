@@ -36,7 +36,8 @@ Raise it under **Authentication → Rate Limits** before a big sign-up day.
 ```
 cd tests && npm install
 ./reset-db.sh fs2                                                 # local Postgres with a Supabase stand-in
-DATABASE_URL=postgres://...fs2 node --test db.test.mjs            # every rule, as each role (14 tests)
+DATABASE_URL=postgres://...fs2 node --test db.test.mjs            # every rule, as each role (16 tests)
+node --test parse.test.mjs                                    # reading schedules, times and actor dates
 DATABASE_URL=postgres://...fs3 PORT=4000 node mock-supabase.mjs & # stand-in API + web server
 BASE=http://localhost:4000 node browser.e2e.mjs                   # full run in a phone-sized browser
 ```

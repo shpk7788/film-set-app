@@ -5,6 +5,8 @@ import * as H from "./views/home.js";
 import * as S from "./views/schedule.js";
 import * as C from "./views/crew.js";
 import * as P from "./views/admin.js";
+import * as I from "./views/imports.js";
+import * as R from "./views/artists.js";
 
 const FKEY = "fs:film";
 export const film = {
@@ -45,6 +47,9 @@ const routes = [
   ["people", P.people, true, true],
   ["access", P.access, true, true],
   ["audit", P.audit, true, true],
+  ["upload", I.uploadSchedule, true, true],
+  ["artists", R.artists, true, true],
+  ["artist/:id", R.artist, true, true],
 ];
 
 function match(path) {
@@ -74,7 +79,7 @@ function navFor(me, active) {
   if (caps.has("schedule.all") || caps.has("schedule.today") || caps.has("schedule.tomorrow")) items.push(["schedule", "Schedule", "schedule"]);
   if (caps.has("crew.view")) items.push(["crew", "Records", "records"]);
   items.push(["inbox", "Updates", "inbox"], ["menu", "More", "menu"]);
-  const map = { day: "schedule", edit: "schedule", tracker: "schedule", viewas: "schedule", search: "crew", contracts: "menu", people: "menu", access: "menu", audit: "menu", notices: "menu", today: "home", callsheet: "home" };
+  const map = { day: "schedule", edit: "schedule", tracker: "schedule", viewas: "schedule", search: "crew", contracts: "menu", people: "menu", access: "menu", audit: "menu", notices: "menu", upload: "schedule", artists: "menu", artist: "menu", today: "home", callsheet: "home" };
   const cur = map[active] ?? (active === "crew" ? "crew" : active);
   return `<nav class="bottom" style="grid-template-columns:repeat(${items.length},minmax(0,1fr))" aria-label="Main">${items
     .map(

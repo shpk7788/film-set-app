@@ -9,9 +9,18 @@ const check = (cond, msg) => {
   console.log(`${cond ? "PASS" : "FAIL"} ${msg}`);
   if (!cond) failures++;
 };
-const shot = (p, name) => (SHOTS ? p.screenshot({ path: `${SHOTS}/${name}.png`, fullPage: true }) : null);
+const shot = async (p, name) => { if (SHOTS) { await p.waitForTimeout(700); await p.screenshot({ path: `${SHOTS}/${name}.png`, fullPage: true }); } };
+// The app loads Excel/PDF readers from a CDN; serve local copies so the test runs offline.
+import { readFileSync } from "node:fs";
+const LIBS = process.env.LIBS || "";
+const cdn = { "xlsx@0.18.5/xlsx.mjs": "xlsx/xlsx.mjs", "pdfjs-dist@4.10.38/build/pdf.min.mjs": "pdfjs-dist/build/pdf.min.mjs", "pdfjs-dist@4.10.38/build/pdf.worker.min.mjs": "pdfjs-dist/build/pdf.worker.min.mjs" };
 const newPage = async () => {
-  const p = await (await browser.newContext({ viewport: { width: 390, height: 844 } })).newPage();
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  await ctx.route("https://cdn.jsdelivr.net/npm/**", (r) => {
+    const key = Object.keys(cdn).find((k) => r.request().url().endsWith(k));
+    return key && LIBS ? r.fulfill({ body: readFileSync(`${LIBS}/${cdn[key]}`), contentType: "text/javascript", headers: { "access-control-allow-origin": "*" } }) : r.abort();
+  });
+  const p = await ctx.newPage();
   p.on("pageerror", (e) => { console.log("PAGE ERROR:", e.message); failures++; });
   return p;
 };
@@ -110,9 +119,9 @@ await cd.getByRole("button", { name: "Create day" }).click();
 await cd.waitForURL(/#\/edit\//);
 await waitText(cd, "Day settings");
 await cd.locator("label.check", { hasText: "Lights" }).first().locator("input").check();
-await cd.locator("label.check", { hasText: "Art" }).first().locator("input").check();
+await cd.locator("label.check", { has: cd.locator("span", { hasText: /^Art$/ }) }).first().locator("input").check();
 await cd.getByRole("button", { name: "Save day settings" }).click();
-await waitText(cd, "Add scene");
+await waitText(cd, "Ready to send");
 const add = cd.locator("details.add-scene");
 if (!(await add.evaluate((d) => d.open))) await add.locator("summary").click();
 await add.locator('[name="scene"]').fill("46");
@@ -124,6 +133,7 @@ const need = (d) => add.locator(".needrow").filter({ has: cd.locator("span", { h
 await need("Lights").fill("2×18K, smoke machine");
 await need("Art").fill("Dining set");
 await add.getByRole("button", { name: "Add scene" }).click();
+await cd.locator("details.card summary", { hasText: "Sc 46" }).waitFor();
 await waitText(cd, "Ready to send");
 await shot(cd, "03-editor");
 await cd.getByRole("button", { name: /Approve & send v1/ }).click();
@@ -226,6 +236,102 @@ await intern.goto(`${BASE}/#/today`);
 await waitText(intern, "Now shooting");
 await shot(intern, "10-intern-live");
 check(true, "intern sees the live view");
+
+// 12. "Everyone" ticks every department in day settings
+const dayId = cd.url().match(/#\/(?:tracker|edit)\/([^/?]+)/)[1];
+await cd.goto(`${BASE}/#/edit/${dayId}`);
+await waitText(cd, "Day settings");
+await cd.locator("details", { hasText: "Day settings" }).first().locator("summary").click();
+await cd.locator("#allDepts").check();
+const deptBoxes = cd.locator("#settings .callrow input[type=checkbox]");
+check((await deptBoxes.count()) > 3 && (await deptBoxes.evaluateAll((els) => els.every((e) => e.checked))), "Everyone ticks all departments");
+await cd.fill("#allTime", "06:15");
+await cd.click("#applyAll");
+check((await cd.locator('#settings input[name^="call_"]').evaluateAll((els) => els.every((e) => e.value === "06:15"))), "same call time applied to every department");
+await shot(cd, "12-everyone");
+
+// 13. Artists: producer adds an artist and the dates they're NOT available (pasted WhatsApp message)
+const ymd = (n) => new Date(Date.now() + 330 * 60000 + n * 864e5).toISOString().slice(0, 10);
+const dmy = (d) => d.split("-").reverse().join("/");
+const tomorrow = ymd(1);
+await owner.goto(`${BASE}/#/artists`);
+await waitText(owner, "Meena Mother");
+const addart = owner.locator("#addart");
+if (!(await addart.evaluate((d) => d.open))) await addart.locator("summary").click();
+await addart.locator('[name="name"]').fill("Hari Kumar");
+await addart.locator('[name="character"]').fill("Vetri");
+await addart.getByRole("button", { name: "Add artist" }).click();
+await owner.locator(".artcard", { hasText: "Hari Kumar" }).waitFor();
+await owner.locator(".artcard", { hasText: "Hari Kumar" }).click();
+await waitText(owner, "Add dates they've given");
+await owner.fill("#datetext", `Sir, Hari can't come ${dmy(tomorrow)}. Rest all ok`);
+await owner.locator(".seg label", { hasText: "NOT available" }).click();
+await owner.click("#readdates");
+await waitText(owner, "Found 1 date");
+await owner.click("#savedates");
+await owner.locator(".cd.no").first().waitFor();
+check((await owner.locator(".cd.no").count()) === 1, "WhatsApp date saved as not available");
+await owner.locator(`.cd[data-date="${ymd(3)}"]`).click();
+await owner.locator(`.cd.yes[data-date="${ymd(3)}"]`).waitFor();
+check(true, "tapping a date marks it available");
+
+// 14. Co-director uploads a schedule as a WhatsApp message — new day created, names matched
+await cd.goto(`${BASE}/#/upload`);
+await waitText(cd, "Your shooting schedule");
+await cd.fill("#sched .uptext", `DAY 2 - ${dmy(tomorrow)}\nCall 6.30 am\nLocation: Temple street\nSc 50 INT. Temple - Day 9:00-11:00 Cast: Vetri\nSc 51 EXT. Street 11.30 am Cast: Meena, Ravi`);
+await cd.click("#sched .upread");
+await waitText(cd, "Found 2 scenes over 1 day");
+check(await cd.getByText("Not matched: Ravi").isVisible(), "unknown cast names are flagged");
+await shot(cd, "13-upload-preview");
+await cd.getByRole("button", { name: "Save to the schedule as drafts" }).click();
+await cd.waitForURL(/#\/schedule$/);
+await cd.locator(".daycard", { hasText: "Day 2" }).waitFor();
+check(true, "schedule upload created Day 2 as a draft");
+await cd.locator(".daycard", { hasText: "Day 2" }).click();
+await cd.getByRole("link", { name: /Edit draft/ }).click();
+await waitText(cd, "Artist date clash");
+check(await cd.getByText("Hari Kumar isn't available").isVisible(), "editor warns that an artist isn't available");
+check((await cd.locator("details.card summary", { hasText: "Sc 50" }).count()) === 1, "imported scene is in the draft");
+
+// 15. Artist page shows their scenes and the clash
+await owner.goto(`${BASE}/#/artists`);
+await owner.locator(".artcard", { hasText: "Hari Kumar" }).getByText("1 clash").waitFor();
+await owner.locator(".artcard", { hasText: "Hari Kumar" }).click();
+await waitText(owner, "they said not available");
+check(await owner.getByText("Sc 50 · INT. Temple").first().isVisible(), "artist page lists their scenes");
+await shot(owner, "14-artist");
+
+// 16. Import a program sheet from Excel and from a PDF into today's draft
+if (LIBS) {
+  const XLSX = await import(`${LIBS}/xlsx/xlsx.mjs`);
+  XLSX.set_fs(await import("node:fs"));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["PROGRAM SHEET"], ["Sc No", "Int/Ext & Set", "Time", "Artists", "Art"], ["60", "INT. Kitchen", "13:00", "Meena", "Brass vessels"], ["61", "INT. Kitchen", "14:30", "Vetri", ""]]), "Day");
+  const xfile = `${SHOTS || "/tmp"}/program.xlsx`;
+  XLSX.writeFile(wb, xfile);
+  await cd.goto(`${BASE}/#/edit/${dayId}`);
+  await waitText(cd, "Import program sheet");
+  await cd.locator("details.imp summary").click();
+  await cd.locator("#prog .upfile").first().setInputFiles(xfile);
+  await waitText(cd, "Found 2 scenes");
+  await cd.getByRole("button", { name: "Add these scenes to the draft" }).click();
+  await cd.locator("details.card summary", { hasText: "Sc 61" }).waitFor();
+  check(true, "Excel program sheet imported into the day");
+
+  const pdfPage = await newPage();
+  await pdfPage.setContent(`<table style="font:16px sans-serif" cellpadding="12"><tr><th>Scene</th><th>Set</th><th>Time</th><th>Cast</th></tr><tr><td>70</td><td>EXT. Beach</td><td>16:00</td><td>Hari Kumar</td></tr><tr><td>71</td><td>EXT. Beach</td><td>17:30</td><td>Meena</td></tr></table>`);
+  const pfile = `${SHOTS || "/tmp"}/program.pdf`;
+  await pdfPage.pdf({ path: pfile });
+  await cd.reload();
+  await waitText(cd, "Import program sheet");
+  if (!(await cd.locator("details.imp").evaluate((d) => d.open))) await cd.locator("details.imp summary").click();
+  await cd.locator("#prog .upfile").first().setInputFiles(pfile);
+  await waitText(cd, "Found 2 scenes");
+  await shot(cd, "15-pdf-preview");
+  await cd.getByRole("button", { name: "Add these scenes to the draft" }).click();
+  await cd.locator("details.card summary", { hasText: "Sc 71" }).waitFor();
+  check(true, "PDF program sheet imported into the day");
+}
 
 // 11. Add another movie with a code (login stays the same)
 await owner.goto(`${BASE}/#/owner`);

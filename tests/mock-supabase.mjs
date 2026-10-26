@@ -61,7 +61,9 @@ http
         const uid = tokens.get(auth) ?? null;
         const keys = Object.keys(args);
         const sql = `select public.${fn}(${keys.map((k, i) => `${k} => $${i + 1}`).join(", ")}) as r`;
-        const vals = keys.map((k) => (args[k] !== null && typeof args[k] === "object" ? JSON.stringify(args[k]) : args[k]));
+        // Like PostgREST: arrays of plain values go to array parameters (date[] etc.); objects go as JSON.
+        const plainArray = (v) => Array.isArray(v) && v.every((x) => x === null || typeof x !== "object");
+        const vals = keys.map((k) => (plainArray(args[k]) && !k.endsWith("items") && !k.endsWith("days") ? args[k] : args[k] !== null && typeof args[k] === "object" ? JSON.stringify(args[k]) : args[k]));
         const c = await pool.connect();
         try {
           await c.query("begin");

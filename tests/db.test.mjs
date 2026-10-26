@@ -26,6 +26,7 @@ async function as(userId, sql, params = []) {
   }
 }
 const call = (user, fn, ...args) => as(user, `select ${fn}(${args.map((_, i) => `$${i + 1}`).join(", ")}) as r`, args);
+const J = (v) => JSON.stringify(v); // jsonb arguments
 const denied = async (p, msg) => assert.rejects(p, msg ? new RegExp(msg) : undefined);
 
 async function user(username) {
@@ -290,6 +291,64 @@ test("expired intern and wrapped film", async () => {
   assert.ok(await call(U.pm, "me", film), "PM keeps read access after wrap");
   await denied(call(U.owner, "post_notice", film, "hi", false), "wrapped");
   await pool.query("update films set status = 'shooting' where id = $1", [film]);
+});
+
+
+test("import: one day's program sheet and a whole schedule", async () => {
+  const dir = (await call(U.codir, "editor_view", day1)).dir;
+  const meena = dir.actors.find((a) => a.name === "Meena Mother").id;
+  const r = await call(U.codir, "import_items", day1, J([
+    { scene: "50", heading: "EXT. Temple – Day", start: "11:00", end: "13:00", castIds: [meena, "not-a-real-id"], needs: { [depts.Art]: "Temple props", bogus: "x" }, notes: "40 junior artists at Gate 2" },
+    { scene: "", heading: "ignored — no scene number" },
+  ]), false, null, null);
+  assert.ok(r.ok);
+  const ed = await call(U.codir, "editor_view", day1);
+  const s50 = ed.data.items.find((i) => i.scene === "50");
+  assert.deepEqual(s50.castIds, [meena], "unknown cast ids are dropped");
+  assert.deepEqual(Object.keys(s50.needs), [depts.Art], "unknown departments are dropped");
+  assert.equal(s50.jobs[0].text, "40 junior artists at Gate 2");
+  assert.equal(ed.data.items.filter((i) => i.scene === "50").length, 1);
+  await denied(call(U.lights, "import_items", day1, J([{ scene: "1" }]), false, null, null), "access");
+
+  const far = (n) => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
+  const res = await call(U.codir, "import_schedule", film, J([
+    { date: far(30), label: "Day 30", dayNumber: 30, location: "Pollachi", generalCall: "06:00", items: [{ scene: "70", castIds: [meena] }, { scene: "71" }] },
+    { date: far(31), label: "Day 31", items: [{ scene: "72", castIds: [meena] }] },
+    { date: today, label: "today", items: [{ scene: "51" }] },
+  ]));
+  assert.equal(res.days, 3);
+  assert.equal(res.newDays, 2, "existing day reused, two new days made");
+  assert.equal(res.scenes, 4);
+  const days = (await call(U.codir, "days_list", film)).days;
+  assert.ok(days.some((d) => d.dayNumber === 30));
+  await denied(call(U.codir, "import_schedule", film, J([{ label: "no date", items: [] }])), "date");
+});
+
+test("artists: list, dates, scenes and conflicts", async () => {
+  const list = await call(U.pm, "artists_list", film);
+  const meena = list.artists.find((a) => a.name === "Meena Mother");
+  assert.ok(meena.scenes >= 1);
+  const far = (n) => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
+  await call(U.pm, "set_availability", meena.id, [far(30), far(32)], true, "From manager");
+  await call(U.pm, "set_availability", meena.id, [far(31)], false, null);
+  const v = await call(U.codir, "artist_view", meena.id);
+  assert.equal(v.dates.length, 3);
+  const s72 = v.scenes.find((s) => s.scene === "72");
+  assert.equal(s72.available, false, "scene on a date she's not available is flagged");
+  assert.equal(s72.status, "draft", "editors see draft scenes");
+  const after = await call(U.codir, "artists_list", film); // drafts count for people who edit schedules
+  assert.equal(after.artists.find((a) => a.name === "Meena Mother").conflicts, 1);
+  // The day editor warns about it too
+  const day31 = (await call(U.codir, "days_list", film)).days.find((d) => String(d.date).slice(0, 10) === far(31));
+  assert.ok((await call(U.codir, "editor_view", day31.id)).unavailable.includes(meena.id));
+  // Clearing dates
+  await call(U.pm, "set_availability", meena.id, [far(32)], null, null);
+  assert.equal((await call(U.pm, "artist_view", meena.id)).dates.length, 2);
+  // Permissions
+  await denied(call(U.lights, "artists_list", film), "access");
+  await denied(call(U.ad1, "set_availability", meena.id, [far(30)], true, null), "access");
+  assert.ok(await call(U.ad1, "artist_view", meena.id), "1st AD can view artists");
+  await denied(call(U.mother, "artist_view", meena.id), "access");
 });
 
 test.after(() => pool.end());

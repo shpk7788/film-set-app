@@ -89,6 +89,7 @@ export async function home({ me, filmId, render }) {
 
   const tiles = [
     anySchedule(me) && tile("#/schedule", "Schedule", "Program sheets", "schedule", "t-dusk"),
+    has(me, "artists.view") && tile("#/artists", "Artists", "Dates & scenes", "star", "t-indigo"),
     has(me, "crew.view") && tile("#/crew", "Crew", "Daily lists", "people", "t-sea"),
     has(me, "contracts") && tile("#/contracts", "Money", "Contracts & pay", "money", "t-sun"),
     me.member.role === "producer" && tile("#/access", "Who sees what", "Channels", "lock", "t-night"),
@@ -167,6 +168,8 @@ export async function menu({ me, go, film }) {
   const items = [
     ["#/notices", "Notices for everyone", "Updates for the whole unit", "megaphone", "s-indigo", true],
     ["#/today", "On set now", "What's being shot and what's next", "clap", "s-violet", has(me, "live.view")],
+    ["#/artists", "Artists", "Actor dates and their scenes", "star", "s-sun", has(me, "artists.view")],
+    ["#/upload", "Upload schedule", "Excel, PDF, photo or WhatsApp", "upload", "s-violet", has(me, "program.edit") && !me.film.readOnly],
     ["#/crew", "Crew lists", "Daily crew lists and approvals", "people", "s-teal", has(me, "crew.view")],
     ["#/search", "Search crew history", "Call sheets worked by anyone", "search", "s-teal", has(me, "crew.view")],
     ["#/contracts", "Contracts & payments", "Artists, deals and balances", "money", "s-sun", has(me, "contracts")],

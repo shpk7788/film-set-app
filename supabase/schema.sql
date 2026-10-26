@@ -219,6 +219,15 @@ create table if not exists audit_log (
   created_at timestamptz not null default now()
 );
 create index if not exists audit_film_time on audit_log(film_id, created_at desc);
+-- Actor availability: one row per actor per date they said they can (or can't) come.
+create table if not exists actor_availability (
+  membership_id uuid not null references memberships(id),
+  date date not null,
+  available boolean not null,
+  note text,
+  updated_at timestamptz not null default now(),
+  primary key (membership_id, date)
+);
 
 -- ---------- channel catalogue (the defaults come from the build spec) ----------
 insert into caps (capability, label, grp, sort) values
@@ -232,6 +241,8 @@ insert into caps (capability, label, grp, sort) values
   ('tracker.view',     'See who has confirmed',                       'Schedule', 26),
   ('live.view',        'On set now (live view)',                      'On set', 30),
   ('live.edit',        'Update the live status',                      'On set', 31),
+  ('artists.view',     'Artist list, dates & scenes',                 'Artists', 35),
+  ('artists.edit',     'Edit artist dates',                           'Artists', 36),
   ('crew.view',        'Crew lists & history',                        'Crew lists', 40),
   ('crew.edit',        'Prepare crew lists',                          'Crew lists', 41),
   ('crew.release',     'Release people early',                        'Crew lists', 42),
@@ -248,12 +259,12 @@ on conflict (capability) do update set label = excluded.label, grp = excluded.gr
 delete from cap_defaults where true;
 insert into cap_defaults (role, capability)
 select r::film_role, c from (values
-  ('executive_producer', array['notice.post','schedule.today','schedule.tomorrow','schedule.all','callsheets.all','tracker.view','live.view','crew.view','crew.release','crew.approve.ep','crew.reopen','people.view','contacts.view','audit.view']),
-  ('production_manager', array['notice.post','schedule.today','schedule.tomorrow','schedule.all','callsheets.all','tracker.view','live.view','crew.view','crew.edit','crew.release','crew.approve.pm','people.view','people.manage','contacts.view']),
-  ('production_team',    array['notice.post','schedule.today','schedule.tomorrow','schedule.all','callsheets.all','tracker.view','live.view','crew.view','crew.edit','crew.release','people.view','people.manage','contacts.view']),
-  ('director',           array['notice.post','schedule.today','schedule.tomorrow','schedule.all','program.edit','program.send','callsheets.all','tracker.view','live.view','live.edit','contacts.view']),
-  ('co_director',        array['notice.post','schedule.today','schedule.tomorrow','schedule.all','program.edit','program.send','callsheets.all','tracker.view','live.view','live.edit','contacts.view','people.view','people.manage']),
-  ('first_ad',           array['schedule.today','schedule.tomorrow','schedule.all','program.edit','tracker.view','live.view','live.edit','crew.release','contacts.view']),
+  ('executive_producer', array['artists.view','notice.post','schedule.today','schedule.tomorrow','schedule.all','callsheets.all','tracker.view','live.view','crew.view','crew.release','crew.approve.ep','crew.reopen','people.view','contacts.view','audit.view']),
+  ('production_manager', array['artists.view','artists.edit','notice.post','schedule.today','schedule.tomorrow','schedule.all','callsheets.all','tracker.view','live.view','crew.view','crew.edit','crew.release','crew.approve.pm','people.view','people.manage','contacts.view']),
+  ('production_team',    array['artists.view','artists.edit','notice.post','schedule.today','schedule.tomorrow','schedule.all','callsheets.all','tracker.view','live.view','crew.view','crew.edit','crew.release','people.view','people.manage','contacts.view']),
+  ('director',           array['artists.view','notice.post','schedule.today','schedule.tomorrow','schedule.all','program.edit','program.send','callsheets.all','tracker.view','live.view','live.edit','contacts.view']),
+  ('co_director',        array['artists.view','artists.edit','notice.post','schedule.today','schedule.tomorrow','schedule.all','program.edit','program.send','callsheets.all','tracker.view','live.view','live.edit','contacts.view','people.view','people.manage']),
+  ('first_ad',           array['artists.view','schedule.today','schedule.tomorrow','schedule.all','program.edit','tracker.view','live.view','live.edit','crew.release','contacts.view']),
   ('second_ad',          array['schedule.today','schedule.tomorrow','live.view']),
   ('direction_intern',   array['schedule.today','live.view'])
 ) as d(r, cs), unnest(cs) as c;
@@ -925,6 +936,9 @@ begin
         'departments', (select coalesce(jsonb_agg(dept_name(x)), '[]'::jsonb) from unnest(changed_depts(d.film_id, prev.data, latest.data)) x),
         'actors', (select coalesce(jsonb_agg(member_name(x)), '[]'::jsonb) from unnest(changed_actors(prev.data, latest.data)) x)) end,
     'dir', directory(d.film_id),
+    -- Actors who said they're NOT available on this day (shown as a warning on their scenes).
+    'unavailable', (select coalesce(jsonb_agg(membership_id), '[]'::jsonb) from actor_availability a
+                    join memberships x on x.id = a.membership_id where x.film_id = d.film_id and a.date = d.date and not a.available),
     'canSend', member_can(m, 'program.send'));
 end $$;
 
@@ -1605,6 +1619,161 @@ begin
     left join profiles p on p.id = a.actor_id), '[]'::jsonb);
 end $$;
 
+
+-- ---------- importing schedules ----------
+-- Cleans imported items and merges them into a program sheet (append, or replace all scenes).
+create or replace function merge_items(p_film uuid, cur jsonb, p_items jsonb, p_replace boolean) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare items jsonb := case when p_replace then '[]'::jsonb else coalesce(cur->'items', '[]'::jsonb) end; i jsonb; k text; n int := 0;
+begin
+  for i in select x from jsonb_array_elements(coalesce(p_items, '[]'::jsonb)) x loop
+    if coalesce(trim(i->>'scene'), '') = '' then continue; end if;
+    n := n + 1;
+    k := substr(md5(random()::text || n::text), 1, 8);
+    items := items || jsonb_build_array(jsonb_build_object(
+      'key', k, 'scene', left(trim(i->>'scene'), 20), 'heading', left(coalesce(i->>'heading', ''), 200), 'pages', left(coalesce(i->>'pages', ''), 20),
+      'location', left(coalesce(i->>'location', ''), 200),
+      'start', case when is_time(i->>'start') then i->>'start' else '' end,
+      'end', case when is_time(i->>'end') then i->>'end' else '' end,
+      'castIds', coalesce((select jsonb_agg(x) from jsonb_array_elements_text(coalesce(i->'castIds', '[]')) x
+                           where exists (select 1 from memberships where film_id = p_film and role = 'actor' and id::text = x)), '[]'::jsonb),
+      'needs', coalesce((select jsonb_object_agg(key, left(value #>> '{}', 300)) from jsonb_each(coalesce(i->'needs', '{}'))
+                         where trim(value #>> '{}') <> '' and exists (select 1 from departments where film_id = p_film and id::text = key)), '{}'::jsonb),
+      'cut', false,
+      'jobs', coalesce((select jsonb_agg(jsonb_build_object('forRole', 'second_ad', 'text', left(trim(x), 300)))
+                        from unnest(string_to_array(coalesce(i->>'notes', ''), E'\n')) x where trim(x) <> ''), '[]'::jsonb)));
+  end loop;
+  select coalesce(jsonb_agg(x order by coalesce(nullif(x->>'start', ''), '99'), ord), '[]') into items from jsonb_array_elements(items) with ordinality t(x, ord);
+  return jsonb_set(coalesce(cur, empty_program('', '07:00')), '{items}', items);
+end $$;
+
+-- Import scenes into one day's draft (from an uploaded program sheet).
+create or replace function import_items(p_day uuid, p_items jsonb, p_replace boolean, p_location text, p_general_call text) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare d shoot_days; cur jsonb;
+begin
+  select * into d from shoot_days where id = p_day;
+  perform require_cap(d.film_id, 'program.edit'); perform require_shooting(d.film_id);
+  if jsonb_array_length(coalesce(p_items, '[]')) = 0 then raise exception 'No scenes to import.'; end if;
+  cur := merge_items(d.film_id, current_data(p_day), p_items, coalesce(p_replace, false));
+  if coalesce(trim(p_location), '') <> '' then cur := jsonb_set(cur, '{location}', to_jsonb(trim(p_location))); end if;
+  if is_time(p_general_call) then cur := jsonb_set(cur, '{generalCall}', to_jsonb(p_general_call)); end if;
+  return apply_draft(p_day, cur, 'program_imported');
+end $$;
+
+-- Import a whole shooting schedule: creates the shoot days that don't exist yet and adds each day's scenes as a draft.
+create or replace function import_schedule(p_film uuid, p_days jsonb) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare m memberships; dd jsonb; d shoot_days; v program_versions; nd int := 0; ni int := 0; num int; dt date; cur jsonb;
+begin
+  m := require_cap(p_film, 'program.edit'); perform require_shooting(p_film);
+  if jsonb_array_length(coalesce(p_days, '[]')) = 0 then raise exception 'Nothing to import.'; end if;
+  if jsonb_array_length(p_days) > 200 then raise exception 'That''s more than 200 days — split the file.'; end if;
+  for dd in select x from jsonb_array_elements(p_days) x loop
+    begin dt := (dd->>'date')::date; exception when others then raise exception 'Every day needs a date (check "%").', dd->>'label'; end;
+    if dt is null then raise exception 'Every day needs a date.'; end if;
+    select * into d from shoot_days where film_id = p_film and date = dt order by day_number limit 1;
+    if not found then
+      num := nullif(dd->>'dayNumber', '')::int;
+      if num is null or exists (select 1 from shoot_days where film_id = p_film and day_number = num) then
+        num := coalesce((select max(day_number) from shoot_days where film_id = p_film), 0) + 1;
+      end if;
+      insert into shoot_days (film_id, day_number, date) values (p_film, num, dt) returning * into d;
+      nd := nd + 1;
+    end if;
+    v := draft_for(d.id, m.id);
+    cur := merge_items(p_film, v.data, dd->'items', false);
+    if coalesce(trim(dd->>'location'), '') <> '' and coalesce(cur->>'location', '') = '' then cur := jsonb_set(cur, '{location}', to_jsonb(trim(dd->>'location'))); end if;
+    if is_time(dd->>'generalCall') then cur := jsonb_set(cur, '{generalCall}', to_jsonb(dd->>'generalCall')); end if;
+    update program_versions set data = cur, edited_by = m.id, updated_at = now() where id = v.id;
+    ni := ni + jsonb_array_length(coalesce(dd->'items', '[]'));
+  end loop;
+  perform log_audit(p_film, 'schedule_imported', 'film', p_film::text, null, jsonb_build_object('days', jsonb_array_length(p_days), 'newDays', nd, 'scenes', ni));
+  return jsonb_build_object('days', jsonb_array_length(p_days), 'newDays', nd, 'scenes', ni);
+end $$;
+
+-- ---------- artists ----------
+-- The version of a day an artist list may show: drafts too for people who edit schedules.
+create or replace function visible_version(m memberships, p_day uuid) returns program_versions
+language sql stable security definer set search_path = public as $$
+  select * from program_versions where shoot_day_id = p_day and (status = 'sent' or member_can(m, 'program.edit'))
+  order by version desc limit 1
+$$;
+
+create or replace function artist_scenes(m memberships, p_actor uuid) returns jsonb
+language sql stable security definer set search_path = public as $$
+  select coalesce(jsonb_agg(jsonb_build_object('dayId', d.id, 'dayNumber', d.day_number, 'date', d.date, 'status', v.status, 'version', v.version,
+      'scene', i->>'scene', 'heading', i->>'heading', 'start', i->>'start', 'location', i->>'location',
+      'available', (select available from actor_availability a where a.membership_id = p_actor and a.date = d.date)) order by d.date, i->>'start'), '[]'::jsonb)
+  from shoot_days d cross join lateral (select * from visible_version(m, d.id)) v
+  cross join lateral jsonb_array_elements(coalesce(v.data->'items', '[]')) i
+  where d.film_id = m.film_id and v.id is not null and not is_cut(i) and coalesce(i->'castIds', '[]') ? p_actor::text
+$$;
+
+create or replace function artists_list(p_film uuid) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare m memberships;
+begin
+  m := require_cap(p_film, 'artists.view');
+  return jsonb_build_object(
+    'canEdit', member_can(m, 'artists.edit') and not exists (select 1 from films where id = p_film and status = 'wrapped'),
+    'canAdd', member_can(m, 'people.manage') and 'actor' = any (assignable_roles(m)),
+    'artists', coalesce((select jsonb_agg(jsonb_build_object('id', a.id, 'name', a.display_name, 'character', a.character_name, 'joined', a.person_id is not null,
+        'scenes', jsonb_array_length(artist_scenes(m, a.id)),
+        'availableDays', (select count(*) from actor_availability x where x.membership_id = a.id and x.available and x.date >= today_ist()),
+        'nextAvailable', (select min(date) from actor_availability x where x.membership_id = a.id and x.available and x.date >= today_ist()),
+        'conflicts', (select count(*) from jsonb_array_elements(artist_scenes(m, a.id)) s where s->>'available' = 'false')) order by a.display_name)
+      from memberships a where a.film_id = p_film and a.role = 'actor' and a.active), '[]'::jsonb));
+end $$;
+
+create or replace function artist_view(p_member uuid) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare a memberships; m memberships;
+begin
+  select * into a from memberships where id = p_member and role = 'actor';
+  if not found then raise exception 'Artist not found.'; end if;
+  m := require_cap(a.film_id, 'artists.view');
+  return jsonb_build_object(
+    'artist', jsonb_build_object('id', a.id, 'name', a.display_name, 'character', a.character_name, 'joined', a.person_id is not null,
+       'phone', case when member_can(m, 'contacts.view') then a.phone end),
+    'canEdit', member_can(m, 'artists.edit') and not exists (select 1 from films where id = a.film_id and status = 'wrapped'),
+    'today', today_ist(),
+    'dates', coalesce((select jsonb_agg(jsonb_build_object('date', date, 'available', available, 'note', note) order by date)
+                       from actor_availability where membership_id = a.id), '[]'::jsonb),
+    'scenes', artist_scenes(m, a.id));
+end $$;
+
+-- What the schedule importer needs to match names: departments, actors and today's date.
+create or replace function import_context(p_film uuid) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+begin
+  perform require_cap(p_film, 'program.edit');
+  return directory(p_film) || jsonb_build_object('today', today_ist(),
+    'days', coalesce((select jsonb_agg(jsonb_build_object('date', date, 'dayNumber', day_number) order by date) from shoot_days where film_id = p_film), '[]'::jsonb));
+end $$;
+
+-- Mark dates as available (true), not available (false) or unknown (null) for an artist.
+create or replace function set_availability(p_member uuid, p_dates date[], p_available boolean, p_note text) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare a memberships;
+begin
+  select * into a from memberships where id = p_member and role = 'actor';
+  if not found then raise exception 'Artist not found.'; end if;
+  perform require_cap(a.film_id, 'artists.edit'); perform require_shooting(a.film_id);
+  if cardinality(coalesce(p_dates, '{}')) = 0 then raise exception 'Pick at least one date.'; end if;
+  if cardinality(p_dates) > 400 then raise exception 'Too many dates at once.'; end if;
+  if p_available is null then
+    delete from actor_availability where membership_id = a.id and date = any (p_dates);
+  else
+    insert into actor_availability (membership_id, date, available, note)
+    select a.id, x, p_available, nullif(trim(coalesce(p_note, '')), '') from unnest(p_dates) x
+    on conflict (membership_id, date) do update set available = excluded.available, note = excluded.note, updated_at = now();
+  end if;
+  perform log_audit(a.film_id, 'artist_dates_changed', 'membership', a.id::text, null,
+    jsonb_build_object('dates', cardinality(p_dates), 'available', p_available));
+  return jsonb_build_object('ok', true, 'count', cardinality(p_dates));
+end $$;
+
 -- =====================================================================================
 -- Guarantees enforced by the database itself
 -- =====================================================================================
@@ -1650,7 +1819,9 @@ grant execute on function
   release_early(uuid, int, text, text), send_for_approval(uuid), decide(uuid, text, text), reopen(uuid, text), crew_search(uuid, text, boolean),
   contracts_view(uuid), save_contract(uuid, text, bigint, date, text), record_payment(uuid, bigint, date, text),
   people_view(uuid), add_person(uuid, jsonb), issue_code(uuid), update_member(uuid, jsonb), remove_person(uuid),
-  set_member_access(uuid, text, boolean), access_matrix(uuid), set_role_access(uuid, text, text, boolean), audit_view(uuid)
+  set_member_access(uuid, text, boolean), access_matrix(uuid), set_role_access(uuid, text, text, boolean), audit_view(uuid),
+  import_items(uuid, jsonb, boolean, text, text), import_schedule(uuid, jsonb), import_context(uuid),
+  artists_list(uuid), artist_view(uuid), set_availability(uuid, date[], boolean, text)
 to authenticated;
 
 notify pgrst, 'reload schema';

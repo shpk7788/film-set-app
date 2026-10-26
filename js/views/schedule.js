@@ -1,6 +1,7 @@
 import { rpc } from "../api.js";
-import { alert, avatar, badge, btn, checkbox, empty, esc, field, fmtStamp, fmtTime, link, onForm, select, textarea, title, toast, watermark } from "../ui.js";
+import { alert, avatar, badge, btn, checkbox, empty, esc, field, fmtStamp, fmtTime, link, onForm, select, svg, textarea, title, toast, watermark } from "../ui.js";
 import { bindGotIt, changedBox, dayLabel, gotIt, has, sliceView } from "./parts.js";
+import { bindReader, readerBox } from "./imports.js";
 
 const label = (x) => `<p class="label">${x}</p>`;
 
@@ -72,8 +73,8 @@ export async function schedule({ filmId, go, me }) {
   const s = await rpc("days_list", { p_film: filmId });
   const canEdit = s.canEdit && !me.film.readOnly;
   return {
-    html: `${title("Schedule", "Program sheets")}<main class="page">
-      ${s.days.length ? "" : empty("No shoot days you can see yet.")}
+    html: `${title("Schedule", "Program sheets", canEdit ? `<div class="btnrow">${link(`${svg("upload", 18)} Upload schedule`, "#/upload", "direction small")}</div>` : "")}<main class="page">
+      ${s.days.length ? "" : empty(canEdit ? "No shoot days yet. Upload your schedule (Excel, PDF, photo or WhatsApp text) or add a day below." : "No shoot days you can see yet.")}
       ${s.days
         .map(
           (d) => `<a class="card daycard ${d.date < me.today ? "past" : ""}" href="#/day/${esc(d.id)}">
@@ -162,11 +163,18 @@ export async function edit({ params, render, go, me }) {
   const data = e.data;
   const dir = e.dir;
   const pv = e.preview;
+  const off = new Set(e.unavailable || []);
+  const clash = dir.actors
+    .filter((a) => off.has(a.id))
+    .map((a) => ({ id: a.id, name: a.name, scenes: data.items.filter((i) => !i.cut && i.castIds?.includes(a.id)).map((i) => i.scene) }))
+    .filter((c) => c.scenes.length);
+  const canImport = !me.film.readOnly;
   return {
     html: `${title(dayLabel(e.day), "Edit program sheet", `<div class="btnrow">${e.draft ? badge(`Draft v${e.draft} · not sent`, "warn") : badge(`Showing sent v${e.latestVersion}`, "dept")}<a href="#/day/${esc(e.day.id)}"><b>Back to sent version</b></a></div>`)}
     <main class="page">
       ${me.film.readOnly ? alert("This film has wrapped and is read-only.", "", "danger") : ""}
       ${!e.draft ? alert(`Any change you save starts draft v${(e.latestVersion || 0) + 1}. Crew only see it after it's sent.`, "", "info") : ""}
+      ${clash.length ? alert(clash.map((c) => `<p><b>${esc(c.name)}</b> isn't available on this date — in Sc ${esc(c.scenes.join(", "))}.</p>`).join("") + `<p class="small"><a href="#/artist/${esc(clash[0].id)}">See their dates</a></p>`, "Artist date clash", "danger") : ""}
       ${
         pv
           ? `<section class="card strong-direction">${label(e.prevSent ? `Changes since v${e.prevSent}` : "Ready to send")}
@@ -176,12 +184,16 @@ export async function edit({ params, render, go, me }) {
           </section>`
           : ""
       }
+      ${canImport ? `<details class="card imp" ${data.items.length ? "" : "open"}><summary><b>${svg("upload", 18)} Import program sheet</b><small>Excel, PDF, photo or WhatsApp</small></summary>${readerBox("prog", "Program sheet for this day", "We'll read the scenes, times and cast. You check them before anything is saved.")}</details>` : ""}
       <details class="card" ${data.items.length ? "" : "open"}><summary>Day settings — calls, location, actor times</summary>
         <form id="settings" class="stack">
           ${field("General call", "generalCall", { type: "time", value: data.generalCall, required: true })}
           ${field("Main location", "location", { value: data.location })}
           ${textarea("Notes for everyone on this sheet", "notes", data.notes)}
-          <fieldset><legend>Departments called</legend>${dir.departments
+          <fieldset><legend>Departments called</legend>
+            <div class="allrow"><label class="check strong"><input type="checkbox" id="allDepts" ${dir.departments.length && dir.departments.every((d) => d.id in (data.deptCalls || {})) ? "checked" : ""}> <span><b>Everyone</b> — call all departments</span></label>
+              <div class="callrow"><span class="muted small">Same time for all</span><input type="time" id="allTime" aria-label="Call time for everyone" value="${esc(data.generalCall || "")}"><button type="button" class="btn soft small" id="applyAll">Apply</button></div></div>
+            ${dir.departments
             .map(
               (d) => `<div class="callrow">${checkbox(d.name, `called_${d.id}`, d.id in (data.deptCalls || {}))}<input type="time" name="call_${esc(d.id)}" aria-label="${esc(d.name)} call time" value="${esc(data.deptCalls?.[d.id] || "")}"></div>`,
             )
@@ -219,6 +231,27 @@ export async function edit({ params, render, go, me }) {
         toast("Saved to the draft. Nothing is sent until the Director or Co-director sends it.");
         render();
       };
+      const all = root.querySelector("#allDepts");
+      const rows = [...root.querySelectorAll("#settings .callrow input[type=checkbox]")];
+      const sync = () => (all.checked = rows.length > 0 && rows.every((c) => c.checked));
+      all?.addEventListener("change", () => rows.forEach((c) => (c.checked = all.checked)));
+      rows.forEach((c) => c.addEventListener("change", sync));
+      root.querySelector("#applyAll")?.addEventListener("click", () => {
+        const t = root.querySelector("#allTime").value;
+        root.querySelectorAll('#settings input[name^="call_"]').forEach((i) => (i.value = t));
+        rows.forEach((c) => (c.checked = true));
+        all.checked = true;
+        toast("Same call time set for every department — press Save day settings.");
+      });
+      bindReader(root, "prog", { ...dir, today: String(e.day.date).slice(0, 10) }, {
+        multi: false,
+        async onImport(days, replace) {
+          const d = days[0];
+          await rpc("import_items", { p_day: e.day.id, p_items: d.items, p_replace: replace, p_location: d.location, p_general_call: d.generalCall });
+          render();
+          return `Imported ${d.items.length} scene${d.items.length === 1 ? "" : "s"} into the draft. Check, then send.`;
+        },
+      });
       onForm(root, "#settings", async (fd) => {
         const deptCalls = {};
         for (const d of dir.departments) if (fd.get(`called_${d.id}`) === "on") deptCalls[d.id] = fd.get(`call_${d.id}`) || fd.get("generalCall");
