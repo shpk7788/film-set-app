@@ -245,7 +245,7 @@ insert into caps (capability, label, grp, sort) values
   ('audit.view',       'Change log',                                  'People', 63)
 on conflict (capability) do update set label = excluded.label, grp = excluded.grp, sort = excluded.sort;
 
-delete from cap_defaults;
+delete from cap_defaults where true;
 insert into cap_defaults (role, capability)
 select r::film_role, c from (values
   ('executive_producer', array['notice.post','schedule.today','schedule.tomorrow','schedule.all','callsheets.all','tracker.view','live.view','crew.view','crew.release','crew.approve.ep','crew.reopen','people.view','contacts.view','audit.view']),
@@ -622,7 +622,7 @@ begin
   insert into profiles (id, name, username)
   select auth.uid(), trim(p_name), split_part(email, '@', 1) from auth.users where id = auth.uid()
   on conflict (id) do update set name = excluded.name;
-  delete from setup_secret;
+  delete from setup_secret where true;
   perform log_audit(null, 'company_created', 'company', c.id::text, null, jsonb_build_object('name', c.name));
   return jsonb_build_object('ok', true);
 end $$;
